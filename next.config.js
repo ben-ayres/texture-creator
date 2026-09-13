@@ -1,10 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Use different output dir ONLY for local production builds
+  // Vercel expects the default `.next` directory. Local builds may opt into
+  // a separate directory with BUILD_DIR to avoid colliding with dev output.
   output: 'standalone',
-  distDir: process.env.NODE_ENV === 'production'
-    ? (process.env.BUILD_DIR || '.next-build')
-    : '.next',
+  distDir: process.env.BUILD_DIR || '.next',
   // Enable CORS for Design Mode to load resources cross-origin (dev only)
   // Note: Do NOT set allowedDevOrigins - the default allows all origins in dev mode
   async headers() {
