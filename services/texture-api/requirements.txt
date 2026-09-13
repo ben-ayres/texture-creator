@@ -4,4 +4,5 @@ python-multipart==0.0.20
 boto3==1.36.23
 Pillow==11.1.0
 numpy==2.2.3
+opencv-python-headless==4.11.0.86
 modal>=1.0.0

@@ -8,6 +8,8 @@ the final stone/grout segmentation model.
 
 import io
 import modal
+import cv2
+import numpy as np
 from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps, ImageStat
 
 image = modal.Image.debian_slim(python_version="3.12").pip_install(
@@ -30,6 +32,24 @@ def _illumination_normalise(image: Image.Image) -> Image.Image:
     return ImageEnhance.Contrast(corrected).enhance(0.98)
 
 
+def _perspective_correct(image: Image.Image, corners: list[list[float]] | None) -> Image.Image:
+    if not corners or len(corners) != 4:
+        return image
+    source = np.array(image.convert("RGB"))
+    points = np.array(corners, dtype=np.float32)
+    # Points are normalised [x, y] values in clockwise order.
+    points[:, 0] *= source.shape[1]
+    points[:, 1] *= source.shape[0]
+    width = max(np.linalg.norm(points[1] - points[0]), np.linalg.norm(points[2] - points[3]))
+    height = max(np.linalg.norm(points[3] - points[0]), np.linalg.norm(points[2] - points[1]))
+    output_width = max(256, int(width))
+    output_height = max(256, int(height))
+    destination = np.array([[0, 0], [output_width - 1, 0], [output_width - 1, output_height - 1], [0, output_height - 1]], dtype=np.float32)
+    matrix = cv2.getPerspectiveTransform(points, destination)
+    warped = cv2.warpPerspective(source, matrix, (output_width, output_height), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
+    return Image.fromarray(warped)
+
+
 def _seamless_tile(image: Image.Image, size: int, variant: str) -> Image.Image:
     """Make a repeatable square using mirrored quadrants and a soft centre seam."""
     crop = ImageOps.fit(image, (size, size), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
@@ -50,11 +70,11 @@ def _seamless_tile(image: Image.Image, size: int, variant: str) -> Image.Image:
         canvas = ImageEnhance.Color(canvas).enhance(1.02)
     return ImageOps.fit(canvas, (size, size), method=Image.Resampling.LANCZOS)
 @app.function(image=image, timeout=900, cpu=4, memory=8192)
-def process_albedo(source_bytes: bytes, surface_height_m: float, variant: str = "balanced", resolution: str = "HD") -> bytes:
+def process_albedo(source_bytes: bytes, surface_height_m: float, variant: str = "balanced", resolution: str = "HD", corners: list[list[float]] | None = None) -> bytes:
     """Return a conservative, lighting-normalised, seamless albedo JPEG."""
     source = Image.open(io.BytesIO(source_bytes)).convert("RGB")
     output_size = RESOLUTIONS.get(resolution, 1080)
-    corrected = _illumination_normalise(source)
+    corrected = _illumination_normalise(_perspective_correct(source, corners))
     result = _seamless_tile(corrected, output_size, variant)
     output = io.BytesIO()
     result.save(output, format="JPEG", quality=95, subsampling=0, optimize=True)

@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import os
 import uuid
@@ -104,7 +105,7 @@ async def analyze_source(file: UploadFile = File(...)):
 
 
 @app.post("/v1/jobs")
-async def create_job(file: UploadFile = File(...), material: str = "stone-walling", surface_height_m: float = 2.0, variant: str = "balanced", resolution: str = "HD"):
+async def create_job(file: UploadFile = File(...), material: str = "stone-walling", surface_height_m: float = 2.0, variant: str = "balanced", resolution: str = "HD", corners: str = ""):
     if not os.getenv("R2_BUCKET_NAME"):
         raise HTTPException(status_code=503, detail="R2 storage is not configured yet.")
     payload = await file.read()
@@ -112,11 +113,23 @@ async def create_job(file: UploadFile = File(...), material: str = "stone-wallin
     source_key = f"uploads/{job_id}/{file.filename or 'source-image'}"
     storage = r2_client()
     storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=source_key, Body=payload, ContentType=file.content_type or "image/jpeg")
+    try:
+        corner_points = json.loads(corners) if corners else None
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail="Surface corners must be valid JSON.") from exc
+    if corner_points is not None:
+        if not isinstance(corner_points, list) or len(corner_points) != 4 or any(
+            not isinstance(point, list)
+            or len(point) != 2
+            or not all(isinstance(value, (int, float)) and 0 <= value <= 1 for value in point)
+            for point in corner_points
+        ):
+            raise HTTPException(status_code=422, detail="Surface corners must contain four normalised [x, y] points.")
     if not os.getenv("MODAL_TOKEN_ID") or not os.getenv("MODAL_TOKEN_SECRET"):
         return {"job_id": job_id, "status": "stored", "source_key": source_key, "next": "Add Modal credentials and deploy the worker."}
     try:
         worker = modal.Function.from_name("patina-texture-worker", "process_albedo")
-        result_bytes = worker.remote(payload, surface_height_m, variant, resolution)
+        result_bytes = worker.remote(payload, surface_height_m, variant, resolution, corner_points)
         result_key = f"processed/{job_id}/albedo-{resolution.lower()}.jpg"
         storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=result_key, Body=result_bytes, ContentType="image/jpeg")
         return {
