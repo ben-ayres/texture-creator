@@ -41,6 +41,9 @@ def _perspective_correct(image: Image.Image, corners: list[list[float]] | None) 
     points[:, 1] *= source.shape[0]
     width = max(np.linalg.norm(points[1] - points[0]), np.linalg.norm(points[2] - points[3]))
     height = max(np.linalg.norm(points[3] - points[0]), np.linalg.norm(points[2] - points[1]))
+    # Keep the selected surface's aspect ratio. The old implementation later
+    # forced this result into a square, which stretched flooring joints and
+    # made a correct projective warp look curved.
     output_width = max(256, int(width))
     output_height = max(256, int(height))
     destination = np.array([[0, 0], [output_width - 1, 0], [output_width - 1, output_height - 1], [0, output_height - 1]], dtype=np.float32)
@@ -67,13 +70,16 @@ def _edge_blend(tile: np.ndarray, band: int) -> np.ndarray:
     return np.clip(result, 0, 255).astype(np.uint8)
 
 
-def _seamless_tile(image: Image.Image, size: int, variant: str, material: str) -> Image.Image:
-    """Create a square crop with blended opposite edges, never mirror the source."""
-    crop = ImageOps.fit(image, (size, size), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+def _seamless_tile(image: Image.Image, resolution: int, variant: str, material: str) -> Image.Image:
+    """Build a rectangular, non-mirrored repeat without changing surface geometry."""
+    source_width, source_height = image.size
+    scale = resolution / max(source_width, source_height)
+    target_width = max(256, round(source_width * scale))
+    target_height = max(256, round(source_height * scale))
+    crop = image.resize((target_width, target_height), Image.Resampling.LANCZOS)
     pixels = np.array(crop.convert("RGB"))
-    # A broad blend is less noticeable on pavers; a narrower blend preserves
-    # irregular wall stones and mortar detail.
-    band = size // (10 if material == "stone-pavers" else 14)
+    # Blend opposing borders while retaining the selected surface aspect ratio.
+    band = min(target_width, target_height) // (10 if material == "stone-pavers" else 14)
     result = Image.fromarray(_edge_blend(pixels, band))
     if variant == "reduced":
         result = ImageEnhance.Color(result).enhance(0.96)
