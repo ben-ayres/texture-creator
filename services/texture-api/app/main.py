@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 import uuid
 from typing import Literal
@@ -11,6 +12,7 @@ from PIL import Image, ImageStat
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Patina Texture API", version="0.1.0")
+logger = logging.getLogger("patina.texture")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",")],
@@ -126,4 +128,11 @@ async def create_job(file: UploadFile = File(...), material: str = "stone-wallin
             "message": "Lighting-normalised seamless albedo prototype created.",
         }
     except Exception as exc:
-        return {"job_id": job_id, "status": "queued", "source_key": source_key, "message": f"Worker unavailable: {exc}"}
+        logger.exception("Modal worker failed for job %s", job_id)
+        return {
+            "job_id": job_id,
+            "status": "queued",
+            "source_key": source_key,
+            "message": "The image was saved, but Modal could not process it yet. Check Render logs for the detailed reason.",
+            "worker_error": str(exc),
+        }

@@ -77,7 +77,7 @@ export default function Home() {
         setJobStatus(`Complete · albedo created · ${resolution} JPEG ready to review.`);
         setProcessed(true);
       } else {
-        setJobStatus(`Job queued · ${result.job_id.slice(0, 8)} · waiting for the GPU worker.`);
+        setJobStatus(`Job queued · ${result.job_id.slice(0, 8)} · ${result.message ?? "waiting for the GPU worker."}`);
       }
     } catch (error) {
       setJobStatus(error instanceof Error ? error.message : "The processing job could not be started.");
