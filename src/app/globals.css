@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+}
+
+@layer components {
+  .patina-mark { width: 32px; height: 32px; border-radius: 50%; border: 1px solid #9d8b70; display: grid; place-items: center; position: relative; }
+  .patina-mark::before, .patina-mark::after, .patina-mark span { content: ""; display: block; position: absolute; border: 1px solid #9d8b70; border-radius: 50%; }
+  .patina-mark::before { width: 21px; height: 21px; } .patina-mark::after { width: 11px; height: 11px; } .patina-mark span { width: 4px; height: 4px; background: #9d8b70; }
+  .texture-overlay { position:absolute; inset:0; background: linear-gradient(120deg, rgba(28,28,24,.12), transparent 36%, rgba(255,255,255,.08)); mix-blend-mode: soft-light; pointer-events:none; }
+  .field-label { display:block; margin-bottom:8px; font-size:10px; font-weight:700; letter-spacing:.15em; text-transform:uppercase; color:#8e8473; }
+  .field-select, .field-input { width:100%; border:1px solid #ded6c8; background:#f8f5ef; padding:11px 35px 11px 12px; font-size:12px; color:#575d52; outline:none; border-radius:2px; }
+  .field-input { width:92px; padding-right:12px; } .field-select:focus, .field-input:focus { border-color:#8b9b80; box-shadow:0 0 0 3px rgba(111,124,103,.12); }
+  .toggle { width:37px; height:21px; background:#d2ccbf; border-radius:99px; padding:3px; transition:.2s; } .toggle span { display:block; width:15px; height:15px; background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 3px #999; } .toggle.active { background:#75866c; } .toggle.active span { transform:translateX(16px); }
+  .variant-card { width:100%; display:flex; align-items:flex-start; gap:10px; border:1px solid #e4ddd1; padding:12px; background:#f9f6f0; border-radius:2px; transition:.2s; } .variant-card:hover, .variant-card.selected { border-color:#9cae92; background:#f1f2e9; }
+  .radio { width:17px; height:17px; display:grid; place-items:center; border:1px solid #bcb4a6; border-radius:50%; color:white; flex:none; } .radio.checked { background:#75866c; border-color:#75866c; }
+  .preview-tile { background:#b5aa97; } .preview-tile img { filter:saturate(.88) contrast(.96); } .seam-grid { position:absolute; inset:0; background-image:linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px); background-size:50% 50%; mix-blend-mode:overlay; }
+}
+
+@layer components {
+  .patina-logo { width: 142px; height: 42px; object-fit: cover; object-position: center; mix-blend-mode: multiply; }
+  .compact-variant { min-height: 112px; padding: 10px; flex-direction: column; gap: 7px; }
+  .compact-variant .radio { position: absolute; margin-left: 0; }
+  .compact-variant > .flex-1 { padding-top: 20px; }
+  .compact-variant > span:last-child { font-size: 8px; }
+  .grout-range { width: 100%; height: 7px; appearance: none; border-radius: 999px; background: linear-gradient(90deg, #e6ddd0 0%, #c6b093 35%, #a38a68 60%, #766754 100%); outline: none; }
+  .grout-range::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fbf9f4; background: #596854; box-shadow: 0 1px 4px rgba(50,45,36,.35); }
+  .grout-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fbf9f4; background: #596854; box-shadow: 0 1px 4px rgba(50,45,36,.35); }
+}
+
+@layer components {
+  .analysis-dot { width: 8px; height: 8px; border-radius: 50%; background: #b8b0a3; flex: none; }
+  .analysis-dot.scanning { background: #b38e5e; box-shadow: 0 0 0 4px rgba(179,142,94,.14); animation: pulse-dot 1s infinite; }
+  .analysis-dot.ready { background: #71856b; box-shadow: 0 0 0 4px rgba(113,133,107,.14); }
+  .tone-choice { display: flex; align-items: center; gap: 7px; border: 1px solid #e2dbce; border-radius: 2px; padding: 8px; font-size: 10px; color: #6d675d; text-align: left; transition: .2s; }
+  .tone-choice.selected { border-color: #9cab91; background: #eef2e9; color: #53624f; }
+  .tone-choice.inactive { opacity: .42; }
+  .tone-swatch { width: 22px; height: 12px; border-radius: 999px; flex: none; }
+  .tone-swatch.cool { background: linear-gradient(90deg, #d9dedc, #87989a, #5c6e72); }
+  .tone-swatch.warm { background: linear-gradient(90deg, #e6dcd0, #c7a47d, #81644c); }
+  @keyframes pulse-dot { 50% { opacity: .4; } }
+}
