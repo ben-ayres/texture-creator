@@ -65,6 +65,22 @@ def signed_result(storage, key: str) -> str:
     )
 
 
+async def parse_corners(corners: str) -> list[list[float]] | None:
+    try:
+        points = json.loads(corners) if corners else None
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail="Surface corners must be valid JSON.") from exc
+    if points is not None and (
+        not isinstance(points, list) or len(points) != 4 or any(
+            not isinstance(point, list) or len(point) != 2
+            or not all(isinstance(value, (int, float)) and 0 <= value <= 1 for value in point)
+            for point in points
+        )
+    ):
+        raise HTTPException(status_code=422, detail="Surface corners must contain four normalised [x, y] points.")
+    return points
+
+
 @app.get("/health")
 def health():
     return {"ok": True, "service": "patina-texture-api", "storage_configured": bool(os.getenv("R2_BUCKET_NAME"))}
@@ -113,18 +129,7 @@ async def create_job(file: UploadFile = File(...), material: str = "stone-wallin
     source_key = f"uploads/{job_id}/{file.filename or 'source-image'}"
     storage = r2_client()
     storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=source_key, Body=payload, ContentType=file.content_type or "image/jpeg")
-    try:
-        corner_points = json.loads(corners) if corners else None
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=422, detail="Surface corners must be valid JSON.") from exc
-    if corner_points is not None:
-        if not isinstance(corner_points, list) or len(corner_points) != 4 or any(
-            not isinstance(point, list)
-            or len(point) != 2
-            or not all(isinstance(value, (int, float)) and 0 <= value <= 1 for value in point)
-            for point in corner_points
-        ):
-            raise HTTPException(status_code=422, detail="Surface corners must contain four normalised [x, y] points.")
+    corner_points = await parse_corners(corners)
     if not os.getenv("MODAL_TOKEN_ID") or not os.getenv("MODAL_TOKEN_SECRET"):
         return {"job_id": job_id, "status": "stored", "source_key": source_key, "next": "Add Modal credentials and deploy the worker."}
     try:
@@ -149,3 +154,25 @@ async def create_job(file: UploadFile = File(...), material: str = "stone-wallin
             "message": "The image was saved, but Modal could not process it yet. Check Render logs for the detailed reason.",
             "worker_error": str(exc),
         }
+
+
+@app.post("/v1/flatten")
+async def flatten_surface(file: UploadFile = File(...), corners: str = ""):
+    """Perspective-correct the selected surface and return it for review."""
+    if not os.getenv("R2_BUCKET_NAME"):
+        raise HTTPException(status_code=503, detail="R2 storage is not configured yet.")
+    payload = await file.read()
+    corner_points = await parse_corners(corners)
+    job_id = str(uuid.uuid4())
+    storage = r2_client()
+    source_key = f"flattened/{job_id}/surface.jpg"
+    if not os.getenv("MODAL_TOKEN_ID") or not os.getenv("MODAL_TOKEN_SECRET"):
+        raise HTTPException(status_code=503, detail="Modal processing is not configured yet.")
+    try:
+        worker = modal.Function.from_name("patina-texture-worker", "process_flatten")
+        result_bytes = await worker.remote.aio(payload, corner_points)
+        storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=source_key, Body=result_bytes, ContentType="image/jpeg")
+        return {"status": "complete", "result_url": signed_result(storage, source_key), "message": "Surface flattened for review."}
+    except Exception as exc:
+        logger.exception("Modal flatten failed for job %s", job_id)
+        raise HTTPException(status_code=502, detail=f"Surface flattening failed: {exc}") from exc

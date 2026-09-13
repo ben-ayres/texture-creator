@@ -89,6 +89,17 @@ def _seamless_tile(image: Image.Image, resolution: int, variant: str, material: 
 
 
 @app.function(image=image, timeout=900, cpu=4, memory=8192)
+def process_flatten(source_bytes: bytes, corners: list[list[float]] | None = None) -> bytes:
+    """Return only the selected surface, flattened for user review."""
+    source = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+    flattened = _perspective_correct(source, corners)
+    result = _illumination_normalise(flattened)
+    output = io.BytesIO()
+    result.save(output, format="JPEG", quality=95, subsampling=0, optimize=True)
+    return output.getvalue()
+
+
+@app.function(image=image, timeout=900, cpu=4, memory=8192)
 def process_albedo(source_bytes: bytes, surface_height_m: float, variant: str = "balanced", resolution: str = "HD", corners: list[list[float]] | None = None, material: str = "stone-walling") -> bytes:
     """Return a conservative, lighting-normalised, seamless albedo JPEG."""
     source = Image.open(io.BytesIO(source_bytes)).convert("RGB")
