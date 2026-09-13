@@ -129,7 +129,7 @@ async def create_job(file: UploadFile = File(...), material: str = "stone-wallin
         return {"job_id": job_id, "status": "stored", "source_key": source_key, "next": "Add Modal credentials and deploy the worker."}
     try:
         worker = modal.Function.from_name("patina-texture-worker", "process_albedo")
-        result_bytes = await worker.remote.aio(payload, surface_height_m, variant, resolution, corner_points)
+        result_bytes = await worker.remote.aio(payload, surface_height_m, variant, resolution, corner_points, material)
         result_key = f"processed/{job_id}/albedo-{resolution.lower()}.jpg"
         storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=result_key, Body=result_bytes, ContentType="image/jpeg")
         return {

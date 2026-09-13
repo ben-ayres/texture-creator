@@ -1,9 +1,8 @@
 """Modal worker for Patina's first real albedo prototype.
 
-This first pass is deliberately conservative: it preserves the source pixels,
-normalises broad illumination, creates a four-way seamless tile with mirrored
-edge blending, and returns an albedo image. It is a processing prototype, not
-the final stone/grout segmentation model.
+This first pass preserves source pixels, normalises broad illumination, and
+builds a non-mirrored tile from the selected surface. It is a processing
+prototype, not the final stone/grout segmentation model.
 """
 
 import io
@@ -50,32 +49,46 @@ def _perspective_correct(image: Image.Image, corners: list[list[float]] | None) 
     return Image.fromarray(warped)
 
 
-def _seamless_tile(image: Image.Image, size: int, variant: str) -> Image.Image:
-    """Make a repeatable square using mirrored quadrants and a soft centre seam."""
+def _edge_blend(tile: np.ndarray, band: int) -> np.ndarray:
+    """Blend opposing borders so the tile joins without mirrored geometry."""
+    result = tile.astype(np.float32)
+    height, width = result.shape[:2]
+    band = max(8, min(band, width // 4, height // 4))
+    for distance in range(band):
+        weight = (distance + 1) / (band + 1)
+        left, right = result[:, distance].copy(), result[:, width - band + distance].copy()
+        mix = left * (1 - weight) + right * weight
+        result[:, distance] = mix
+        result[:, width - band + distance] = mix
+        top, bottom = result[distance, :].copy(), result[height - band + distance, :].copy()
+        mix = top * (1 - weight) + bottom * weight
+        result[distance, :] = mix
+        result[height - band + distance, :] = mix
+    return np.clip(result, 0, 255).astype(np.uint8)
+
+
+def _seamless_tile(image: Image.Image, size: int, variant: str, material: str) -> Image.Image:
+    """Create a square crop with blended opposite edges, never mirror the source."""
     crop = ImageOps.fit(image, (size, size), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
-    mirrored = ImageOps.mirror(crop)
-    flipped = ImageOps.flip(crop)
-    opposite = ImageOps.flip(mirrored)
-    canvas = Image.new("RGB", (size * 2, size * 2))
-    canvas.paste(crop, (0, 0)); canvas.paste(mirrored, (size, 0))
-    canvas.paste(flipped, (0, size)); canvas.paste(opposite, (size, size))
-    # Very small seam feathering keeps the first prototype conservative.
-    feather = max(8, size // 80)
-    seam = Image.new("L", (feather * 2, size), 0)
-    for x in range(feather * 2):
-        seam.putpixel((x, 0), int(255 * min(1, x / max(1, feather))))
+    pixels = np.array(crop.convert("RGB"))
+    # A broad blend is less noticeable on pavers; a narrower blend preserves
+    # irregular wall stones and mortar detail.
+    band = size // (10 if material == "stone-pavers" else 14)
+    result = Image.fromarray(_edge_blend(pixels, band))
     if variant == "reduced":
-        canvas = ImageEnhance.Color(canvas).enhance(0.96)
+        result = ImageEnhance.Color(result).enhance(0.96)
     elif variant == "original":
-        canvas = ImageEnhance.Color(canvas).enhance(1.02)
-    return ImageOps.fit(canvas, (size, size), method=Image.Resampling.LANCZOS)
+        result = ImageEnhance.Color(result).enhance(1.02)
+    return result
+
+
 @app.function(image=image, timeout=900, cpu=4, memory=8192)
-def process_albedo(source_bytes: bytes, surface_height_m: float, variant: str = "balanced", resolution: str = "HD", corners: list[list[float]] | None = None) -> bytes:
+def process_albedo(source_bytes: bytes, surface_height_m: float, variant: str = "balanced", resolution: str = "HD", corners: list[list[float]] | None = None, material: str = "stone-walling") -> bytes:
     """Return a conservative, lighting-normalised, seamless albedo JPEG."""
     source = Image.open(io.BytesIO(source_bytes)).convert("RGB")
     output_size = RESOLUTIONS.get(resolution, 1080)
     corrected = _illumination_normalise(_perspective_correct(source, corners))
-    result = _seamless_tile(corrected, output_size, variant)
+    result = _seamless_tile(corrected, output_size, variant, material)
     output = io.BytesIO()
     result.save(output, format="JPEG", quality=95, subsampling=0, optimize=True)
     return output.getvalue()
