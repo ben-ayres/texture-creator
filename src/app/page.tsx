@@ -71,8 +71,14 @@ export default function Home() {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/v1/jobs`, { method: "POST", body });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "The processing job could not be started.");
-      setJobStatus(`Job queued · ${result.job_id.slice(0, 8)} · waiting for the GPU worker.`);
-      setProcessed(true);
+      if (result.status === "complete" && result.result_url) {
+        setImage(result.result_url);
+        setFileName(`${fileName.replace(/\.[^/.]+$/, "")}-albedo-${resolution.toLowerCase()}.jpg`);
+        setJobStatus(`Complete · albedo created · ${resolution} JPEG ready to review.`);
+        setProcessed(true);
+      } else {
+        setJobStatus(`Job queued · ${result.job_id.slice(0, 8)} · waiting for the GPU worker.`);
+      }
     } catch (error) {
       setJobStatus(error instanceof Error ? error.message : "The processing job could not be started.");
     }

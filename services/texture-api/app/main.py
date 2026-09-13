@@ -4,6 +4,7 @@ import uuid
 from typing import Literal
 
 import boto3
+import modal
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageStat
@@ -50,6 +51,14 @@ def r2_client():
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
         region_name="auto",
+    )
+
+
+def signed_result(storage, key: str) -> str:
+    return storage.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": os.environ["R2_BUCKET_NAME"], "Key": key},
+        ExpiresIn=3600,
     )
 
 
@@ -101,6 +110,20 @@ async def create_job(file: UploadFile = File(...), material: str = "stone-wallin
     source_key = f"uploads/{job_id}/{file.filename or 'source-image'}"
     storage = r2_client()
     storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=source_key, Body=payload, ContentType=file.content_type or "image/jpeg")
-    # The Modal worker is intentionally invoked by the deployment environment.
-    # Until the worker is deployed, the job remains queued rather than pretending it completed.
-    return {"job_id": job_id, "status": "queued", "source_key": source_key, "next": "Deploy services/texture-api/modal_worker.py to Modal to process this job."}
+    if not os.getenv("MODAL_TOKEN_ID") or not os.getenv("MODAL_TOKEN_SECRET"):
+        return {"job_id": job_id, "status": "stored", "source_key": source_key, "next": "Add Modal credentials and deploy the worker."}
+    try:
+        worker = modal.Function.from_name("patina-texture-worker", "process_albedo")
+        result_bytes = worker.remote(payload, surface_height_m, variant, resolution)
+        result_key = f"processed/{job_id}/albedo-{resolution.lower()}.jpg"
+        storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=result_key, Body=result_bytes, ContentType="image/jpeg")
+        return {
+            "job_id": job_id,
+            "status": "complete",
+            "source_key": source_key,
+            "result_key": result_key,
+            "result_url": signed_result(storage, result_key),
+            "message": "Lighting-normalised seamless albedo prototype created.",
+        }
+    except Exception as exc:
+        return {"job_id": job_id, "status": "queued", "source_key": source_key, "message": f"Worker unavailable: {exc}"}
