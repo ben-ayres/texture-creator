@@ -194,3 +194,24 @@ async def flatten_surface(file: UploadFile = File(...), corners: str = "", guide
     except Exception as exc:
         logger.exception("Modal flatten failed for job %s", job_id)
         raise HTTPException(status_code=502, detail=f"Surface flattening failed: {exc}") from exc
+
+
+@app.post("/v1/auto-flatten")
+async def auto_flatten_surface(file: UploadFile = File(...)):
+    """Automatically estimate the dominant material surface for review."""
+    if not os.getenv("R2_BUCKET_NAME"):
+        raise HTTPException(status_code=503, detail="R2 storage is not configured yet.")
+    payload = await file.read()
+    job_id = str(uuid.uuid4())
+    storage = r2_client()
+    result_key = f"flattened/{job_id}/auto-surface.jpg"
+    if not os.getenv("MODAL_TOKEN_ID") or not os.getenv("MODAL_TOKEN_SECRET"):
+        raise HTTPException(status_code=503, detail="Modal processing is not configured yet.")
+    try:
+        worker = modal.Function.from_name("patina-texture-worker", "process_auto_flatten")
+        result_bytes = await worker.remote.aio(payload)
+        storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=result_key, Body=result_bytes, ContentType="image/jpeg")
+        return {"status": "complete", "result_key": result_key, "result_url": signed_result(storage, result_key), "message": "Surface automatically flattened for review."}
+    except Exception as exc:
+        logger.exception("Modal automatic flatten failed for job %s", job_id)
+        raise HTTPException(status_code=502, detail=f"Automatic surface detection failed: {exc}") from exc

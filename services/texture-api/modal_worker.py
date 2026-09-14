@@ -74,6 +74,32 @@ def _corners_from_guides(guides: list[list[float]] | None) -> list[list[float]] 
     return [[float(point[0]), float(point[1])] for point in corners]
 
 
+def _auto_surface_corners(image: Image.Image) -> list[list[float]]:
+    """Estimate a dominant material rectangle, with a safe inset fallback."""
+    source = np.array(image.convert("RGB"))
+    height, width = source.shape[:2]
+    gray = cv2.cvtColor(source, cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(cv2.GaussianBlur(gray, (5, 5), 0), 45, 135)
+    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    image_area = float(width * height)
+    candidates: list[tuple[float, np.ndarray]] = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < image_area * 0.18:
+            continue
+        perimeter = cv2.arcLength(contour, True)
+        polygon = cv2.approxPolyDP(contour, 0.03 * perimeter, True)
+        if len(polygon) == 4 and cv2.isContourConvex(polygon):
+            candidates.append((area, polygon.reshape(4, 2).astype(np.float32)))
+    if candidates:
+        points = max(candidates, key=lambda candidate: candidate[0])[1]
+        total = points.sum(axis=1)
+        difference = np.diff(points, axis=1).ravel()
+        ordered = np.array([points[np.argmin(total)], points[np.argmin(difference)], points[np.argmax(total)], points[np.argmax(difference)]])
+        return [[float(x / width), float(y / height)] for x, y in ordered]
+    return [[0.04, 0.04], [0.96, 0.04], [0.96, 0.96], [0.04, 0.96]]
+
+
 def _edge_blend(tile: np.ndarray, band: int) -> np.ndarray:
     """Blend opposing borders so the tile joins without mirrored geometry."""
     result = tile.astype(np.float32)
@@ -119,6 +145,16 @@ def process_flatten(source_bytes: bytes, corners: list[list[float]] | None = Non
     result = _illumination_normalise(flattened)
     output = io.BytesIO()
     result.save(output, format="JPEG", quality=95, subsampling=0, optimize=True)
+    return output.getvalue()
+
+
+@app.function(image=image, timeout=900, cpu=4, memory=8192)
+def process_auto_flatten(source_bytes: bytes) -> bytes:
+    """Automatically find the dominant surface and return a front-on preview."""
+    source = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+    flattened = _perspective_correct(source, _auto_surface_corners(source))
+    output = io.BytesIO()
+    _illumination_normalise(flattened).save(output, format="JPEG", quality=95, subsampling=0, optimize=True)
     return output.getvalue()
 
 
