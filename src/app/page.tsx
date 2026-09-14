@@ -40,11 +40,12 @@ export default function Home() {
   const [draggingCorner, setDraggingCorner] = useState<number | null>(null);
   const [surfaceConfirmed, setSurfaceConfirmed] = useState(false);
   const [flattened, setFlattened] = useState(false);
+  const [flattenedKey, setFlattenedKey] = useState("");
   const [flattening, setFlattening] = useState(false);
   const variantCopy = useMemo(() => variantOptions[variant], [variant]);
   const surfaceWidth = (Number(surfaceHeight || 0) * imageRatio).toFixed(1);
 
-  function resetSurface() { setCorners(defaultCorners.map((point) => ({ ...point }))); setSurfaceConfirmed(false); setFlattened(false); }
+  function resetSurface() { setCorners(defaultCorners.map((point) => ({ ...point }))); setSurfaceConfirmed(false); setFlattened(false); setFlattenedKey(""); }
   function onFile(file?: File) { if (!file) return; setSourceFile(file); setFileName(file.name); setImage(URL.createObjectURL(file)); setAnalyzed(false); setProcessed(false); setJobStatus(""); setAnalysisNote("Ready to check this uploaded image for texture suitability."); resetSurface(); }
   function selectSample(sample: (typeof samples)[number]) { setSourceFile(null); setImage(sample.src); setFileName(`${sample.label.toLowerCase().replaceAll(" ", "-")}.jpg`); setAnalyzed(false); setProcessed(false); setJobStatus(""); setAnalysisNote("Upload this sample or choose Analyse source after selecting a local image."); resetSurface(); }
   function moveCorner(event: React.PointerEvent<HTMLDivElement>) { if (draggingCorner === null) return; const bounds = event.currentTarget.getBoundingClientRect(); const x = Math.min(0.98, Math.max(0.02, (event.clientX - bounds.left) / bounds.width)); const y = Math.min(0.98, Math.max(0.02, (event.clientY - bounds.top) / bounds.height)); setCorners((current) => current.map((point, index) => index === draggingCorner ? { x, y } : point)); setSurfaceConfirmed(false); }
@@ -57,7 +58,7 @@ export default function Home() {
       const body = new FormData(); body.append("file", sourceFile); body.append("corners", cornersPayload());
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/v1/flatten`, { method: "POST", body });
       const result = await response.json(); if (!response.ok) throw new Error(result.detail || "The surface could not be flattened.");
-      setImage(result.result_url); setFileName(`${fileName.replace(/\.[^/.]+$/, "")}-flattened.jpg`); setFlattened(true); setSurfaceConfirmed(false); setCorners(defaultCorners.map((point) => ({ ...point }))); setJobStatus("Flattened surface ready · review the clean front-on image, then confirm the usable crop.");
+      setImage(result.result_url); setFlattenedKey(result.result_key ?? ""); setFileName(`${fileName.replace(/\.[^/.]+$/, "")}-flattened.jpg`); setFlattened(true); setSurfaceConfirmed(false); setCorners(defaultCorners.map((point) => ({ ...point }))); setJobStatus("Flattened surface ready · review the clean front-on image, then confirm the usable crop.");
     } catch (error) { setJobStatus(error instanceof Error ? error.message : "The surface could not be flattened."); } finally { setFlattening(false); }
   }
 
@@ -70,7 +71,7 @@ export default function Home() {
   async function createTexture() {
     if (!sourceFile || !analyzed || !surfaceConfirmed) return;
     setJobStatus("Uploading source to the processing queue…");
-    try { const body = new FormData(); body.append("file", sourceFile); body.append("material", material === "Stone walling" ? "stone-walling" : "stone-pavers"); body.append("surface_height_m", surfaceHeight); body.append("variant", variant); body.append("resolution", resolution); body.append("corners", cornersPayload()); const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/v1/jobs`, { method: "POST", body }); const result = await response.json(); if (!response.ok) throw new Error(result.detail || "The processing job could not be started."); if (result.status === "complete" && result.result_url) { setImage(result.result_url); setFileName(`${fileName.replace(/\.[^/.]+$/, "")}-albedo-${resolution.toLowerCase()}.jpg`); setJobStatus(`Complete · albedo created · ${resolution} JPEG ready to review.`); setProcessed(true); } else { setJobStatus(`Job queued · ${result.job_id.slice(0, 8)} · ${result.message ?? "waiting for the GPU worker."}`); } } catch (error) { setJobStatus(error instanceof Error ? error.message : "The processing job could not be started."); }
+    try { const body = new FormData(); body.append("file", sourceFile); body.append("material", material === "Stone walling" ? "stone-walling" : "stone-pavers"); body.append("surface_height_m", surfaceHeight); body.append("variant", variant); body.append("resolution", resolution); body.append("corners", cornersPayload()); if (flattenedKey) body.append("flattened_key", flattenedKey); const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/v1/jobs`, { method: "POST", body }); const result = await response.json(); if (!response.ok) throw new Error(result.detail || "The processing job could not be started."); if (result.status === "complete" && result.result_url) { setImage(result.result_url); setFileName(`${fileName.replace(/\.[^/.]+$/, "")}-albedo-${resolution.toLowerCase()}.jpg`); setJobStatus(`Complete · albedo created · ${resolution} JPEG ready to review.`); setProcessed(true); } else { setJobStatus(`Job queued · ${result.job_id.slice(0, 8)} · ${result.message ?? "waiting for the GPU worker."}`); } } catch (error) { setJobStatus(error instanceof Error ? error.message : "The processing job could not be started."); }
   }
   function downloadPreview() { const link = document.createElement("a"); link.href = image; link.download = `${fileName.replace(/\.[^/.]+$/, "")}-patina-${resolution.toLowerCase()}.jpg`; link.click(); }
 

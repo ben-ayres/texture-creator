@@ -121,13 +121,18 @@ async def analyze_source(file: UploadFile = File(...)):
 
 
 @app.post("/v1/jobs")
-async def create_job(file: UploadFile = File(...), material: str = "stone-walling", surface_height_m: float = 2.0, variant: str = "balanced", resolution: str = "HD", corners: str = ""):
+async def create_job(file: UploadFile = File(...), material: str = "stone-walling", surface_height_m: float = 2.0, variant: str = "balanced", resolution: str = "HD", corners: str = "", flattened_key: str = ""):
     if not os.getenv("R2_BUCKET_NAME"):
         raise HTTPException(status_code=503, detail="R2 storage is not configured yet.")
     payload = await file.read()
     job_id = str(uuid.uuid4())
     source_key = f"uploads/{job_id}/{file.filename or 'source-image'}"
     storage = r2_client()
+    if flattened_key:
+        try:
+            payload = storage.get_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=flattened_key)["Body"].read()
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail="The flattened surface could not be found. Please flatten the surface again.") from exc
     storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=source_key, Body=payload, ContentType=file.content_type or "image/jpeg")
     corner_points = await parse_corners(corners)
     if not os.getenv("MODAL_TOKEN_ID") or not os.getenv("MODAL_TOKEN_SECRET"):
@@ -172,7 +177,7 @@ async def flatten_surface(file: UploadFile = File(...), corners: str = ""):
         worker = modal.Function.from_name("patina-texture-worker", "process_flatten")
         result_bytes = await worker.remote.aio(payload, corner_points)
         storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=source_key, Body=result_bytes, ContentType="image/jpeg")
-        return {"status": "complete", "result_url": signed_result(storage, source_key), "message": "Surface flattened for review."}
+        return {"status": "complete", "result_key": source_key, "result_url": signed_result(storage, source_key), "message": "Surface flattened for review."}
     except Exception as exc:
         logger.exception("Modal flatten failed for job %s", job_id)
         raise HTTPException(status_code=502, detail=f"Surface flattening failed: {exc}") from exc
