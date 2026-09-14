@@ -159,6 +159,16 @@ def process_auto_flatten(source_bytes: bytes) -> bytes:
 
 
 @app.function(image=image, timeout=900, cpu=4, memory=8192)
+def process_refine(source_bytes: bytes, crop_corners: list[list[float]]) -> bytes:
+    """Refine only the selected usable area after the rough correction."""
+    source = ImageOps.exif_transpose(Image.open(io.BytesIO(source_bytes))).convert("RGB")
+    refined = _perspective_correct(source, crop_corners)
+    output = io.BytesIO()
+    _illumination_normalise(refined).save(output, format="JPEG", quality=95, subsampling=0, optimize=True)
+    return output.getvalue()
+
+
+@app.function(image=image, timeout=900, cpu=4, memory=8192)
 def process_albedo(source_bytes: bytes, surface_height_m: float, variant: str = "balanced", resolution: str = "HD", corners: list[list[float]] | None = None, material: str = "stone-walling") -> bytes:
     """Return a conservative, lighting-normalised, seamless albedo JPEG."""
     source = ImageOps.exif_transpose(Image.open(io.BytesIO(source_bytes))).convert("RGB")

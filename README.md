@@ -58,3 +58,15 @@ It also applies the photo's EXIF orientation before processing, which prevents s
 Please check three things: whether the image is still sideways, whether the plant/furniture are included, and whether the pavers remain straight rather than visibly warped.
 
 If the result is not suitable, do not repeatedly redeploy. Save a screenshot or download the result and send it back so the next change can be tested locally first.
+
+### Two-stage perspective workflow
+
+The latest version adds a second refinement step:
+
+1. **Find rough perspective** — create a mostly front-on working image.
+2. **Select usable texture area** — drag the four crop handles around a clean rectangular area.
+3. **Refine perspective** — apply the second correction only to that selected area.
+4. **Review corrected area** — check the pavers before processing.
+5. **Create seamless texture** — generate the repeat from the reviewed result.
+
+The crop is allowed to remain rectangular and is not forced into a square. The workflow steps are shown in the right-hand panel beside the image.

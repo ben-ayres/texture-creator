@@ -215,3 +215,30 @@ async def auto_flatten_surface(file: UploadFile = File(...)):
     except Exception as exc:
         logger.exception("Modal automatic flatten failed for job %s", job_id)
         raise HTTPException(status_code=502, detail=f"Automatic surface detection failed: {exc}") from exc
+
+
+@app.post("/v1/refine")
+async def refine_surface(flattened_key: str, crop_corners: str):
+    """Apply the second, local perspective correction to a selected crop."""
+    if not os.getenv("R2_BUCKET_NAME"):
+        raise HTTPException(status_code=503, detail="R2 storage is not configured yet.")
+    crop_points = await parse_corners(crop_corners)
+    if not flattened_key or not crop_points:
+        raise HTTPException(status_code=422, detail="Select a usable texture area first.")
+    storage = r2_client()
+    try:
+        payload = storage.get_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=flattened_key)["Body"].read()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="The rough perspective image could not be found. Please start again.") from exc
+    if not os.getenv("MODAL_TOKEN_ID") or not os.getenv("MODAL_TOKEN_SECRET"):
+        raise HTTPException(status_code=503, detail="Modal processing is not configured yet.")
+    job_id = str(uuid.uuid4())
+    result_key = f"flattened/{job_id}/refined-surface.jpg"
+    try:
+        worker = modal.Function.from_name("patina-texture-worker", "process_refine")
+        result_bytes = await worker.remote.aio(payload, crop_points)
+        storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=result_key, Body=result_bytes, ContentType="image/jpeg")
+        return {"status": "complete", "result_key": result_key, "result_url": signed_result(storage, result_key), "message": "Selected area refined for review."}
+    except Exception as exc:
+        logger.exception("Modal refinement failed for job %s", job_id)
+        raise HTTPException(status_code=502, detail=f"Perspective refinement failed: {exc}") from exc
