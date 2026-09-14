@@ -134,7 +134,9 @@ async def create_job(file: UploadFile = File(...), material: str = "stone-wallin
         except Exception as exc:
             raise HTTPException(status_code=422, detail="The flattened surface could not be found. Please flatten the surface again.") from exc
     storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=source_key, Body=payload, ContentType=file.content_type or "image/jpeg")
-    corner_points = await parse_corners(corners)
+    # A flattened surface has already been rectified. Never apply the
+    # original photograph's corner transform a second time.
+    corner_points = None if flattened_key else await parse_corners(corners)
     if not os.getenv("MODAL_TOKEN_ID") or not os.getenv("MODAL_TOKEN_SECRET"):
         return {"job_id": job_id, "status": "stored", "source_key": source_key, "next": "Add Modal credentials and deploy the worker."}
     try:
