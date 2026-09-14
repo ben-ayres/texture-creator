@@ -139,7 +139,7 @@ def _seamless_tile(image: Image.Image, resolution: int, variant: str, material: 
 @app.function(image=image, timeout=900, cpu=4, memory=8192)
 def process_flatten(source_bytes: bytes, corners: list[list[float]] | None = None, guides: list[list[float]] | None = None) -> bytes:
     """Return only the selected surface, flattened for user review."""
-    source = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+    source = ImageOps.exif_transpose(Image.open(io.BytesIO(source_bytes))).convert("RGB")
     selected_corners = _corners_from_guides(guides) if guides else corners
     flattened = _perspective_correct(source, selected_corners)
     result = _illumination_normalise(flattened)
@@ -151,7 +151,7 @@ def process_flatten(source_bytes: bytes, corners: list[list[float]] | None = Non
 @app.function(image=image, timeout=900, cpu=4, memory=8192)
 def process_auto_flatten(source_bytes: bytes) -> bytes:
     """Automatically find the dominant surface and return a front-on preview."""
-    source = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+    source = ImageOps.exif_transpose(Image.open(io.BytesIO(source_bytes))).convert("RGB")
     flattened = _perspective_correct(source, _auto_surface_corners(source))
     output = io.BytesIO()
     _illumination_normalise(flattened).save(output, format="JPEG", quality=95, subsampling=0, optimize=True)
@@ -161,7 +161,7 @@ def process_auto_flatten(source_bytes: bytes) -> bytes:
 @app.function(image=image, timeout=900, cpu=4, memory=8192)
 def process_albedo(source_bytes: bytes, surface_height_m: float, variant: str = "balanced", resolution: str = "HD", corners: list[list[float]] | None = None, material: str = "stone-walling") -> bytes:
     """Return a conservative, lighting-normalised, seamless albedo JPEG."""
-    source = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+    source = ImageOps.exif_transpose(Image.open(io.BytesIO(source_bytes))).convert("RGB")
     output_size = RESOLUTIONS.get(resolution, 1080)
     corrected = _illumination_normalise(_perspective_correct(source, corners))
     result = _seamless_tile(corrected, output_size, variant, material)
