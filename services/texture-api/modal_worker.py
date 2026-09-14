@@ -52,6 +52,28 @@ def _perspective_correct(image: Image.Image, corners: list[list[float]] | None) 
     return Image.fromarray(warped)
 
 
+def _line_intersection(first: np.ndarray, second: np.ndarray) -> np.ndarray:
+    """Intersect two infinite lines represented by [x1, y1, x2, y2]."""
+    x1, y1, x2, y2 = first
+    x3, y3, x4, y4 = second
+    denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if abs(denominator) < 1e-6:
+        raise ValueError("Calibration lines are parallel or too close together.")
+    factor = x1 * y2 - y1 * x2
+    other = x3 * y4 - y3 * x4
+    return np.array([(factor * (x3 - x4) - (x1 - x2) * other) / denominator, (factor * (y3 - y4) - (y1 - y2) * other) / denominator], dtype=np.float32)
+
+
+def _corners_from_guides(guides: list[list[float]] | None) -> list[list[float]] | None:
+    """Convert four grout guide segments to clockwise plane corners."""
+    if not guides or len(guides) != 4:
+        return None
+    lines = np.array(guides, dtype=np.float32)
+    top, bottom, left, right = lines
+    corners = [_line_intersection(top, left), _line_intersection(top, right), _line_intersection(bottom, right), _line_intersection(bottom, left)]
+    return [[float(point[0]), float(point[1])] for point in corners]
+
+
 def _edge_blend(tile: np.ndarray, band: int) -> np.ndarray:
     """Blend opposing borders so the tile joins without mirrored geometry."""
     result = tile.astype(np.float32)
@@ -89,10 +111,11 @@ def _seamless_tile(image: Image.Image, resolution: int, variant: str, material: 
 
 
 @app.function(image=image, timeout=900, cpu=4, memory=8192)
-def process_flatten(source_bytes: bytes, corners: list[list[float]] | None = None) -> bytes:
+def process_flatten(source_bytes: bytes, corners: list[list[float]] | None = None, guides: list[list[float]] | None = None) -> bytes:
     """Return only the selected surface, flattened for user review."""
     source = Image.open(io.BytesIO(source_bytes)).convert("RGB")
-    flattened = _perspective_correct(source, corners)
+    selected_corners = _corners_from_guides(guides) if guides else corners
+    flattened = _perspective_correct(source, selected_corners)
     result = _illumination_normalise(flattened)
     output = io.BytesIO()
     result.save(output, format="JPEG", quality=95, subsampling=0, optimize=True)

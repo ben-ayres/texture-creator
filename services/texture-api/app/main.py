@@ -81,6 +81,16 @@ async def parse_corners(corners: str) -> list[list[float]] | None:
     return points
 
 
+async def parse_guides(guides: str) -> list[list[float]] | None:
+    try:
+        points = json.loads(guides) if guides else None
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail="Perspective guide lines must be valid JSON.") from exc
+    if points is not None and (not isinstance(points, list) or len(points) != 4 or any(not isinstance(line, list) or len(line) != 4 or not all(isinstance(value, (int, float)) and 0 <= value <= 1 for value in line) for line in points)):
+        raise HTTPException(status_code=422, detail="Perspective guides must contain four normalised [x1, y1, x2, y2] lines.")
+    return points
+
+
 @app.get("/health")
 def health():
     return {"ok": True, "service": "patina-texture-api", "storage_configured": bool(os.getenv("R2_BUCKET_NAME"))}
@@ -164,12 +174,13 @@ async def create_job(file: UploadFile = File(...), material: str = "stone-wallin
 
 
 @app.post("/v1/flatten")
-async def flatten_surface(file: UploadFile = File(...), corners: str = ""):
+async def flatten_surface(file: UploadFile = File(...), corners: str = "", guides: str = ""):
     """Perspective-correct the selected surface and return it for review."""
     if not os.getenv("R2_BUCKET_NAME"):
         raise HTTPException(status_code=503, detail="R2 storage is not configured yet.")
     payload = await file.read()
     corner_points = await parse_corners(corners)
+    guide_points = await parse_guides(guides)
     job_id = str(uuid.uuid4())
     storage = r2_client()
     source_key = f"flattened/{job_id}/surface.jpg"
@@ -177,7 +188,7 @@ async def flatten_surface(file: UploadFile = File(...), corners: str = ""):
         raise HTTPException(status_code=503, detail="Modal processing is not configured yet.")
     try:
         worker = modal.Function.from_name("patina-texture-worker", "process_flatten")
-        result_bytes = await worker.remote.aio(payload, corner_points)
+        result_bytes = await worker.remote.aio(payload, corner_points, guide_points)
         storage.put_object(Bucket=os.environ["R2_BUCKET_NAME"], Key=source_key, Body=result_bytes, ContentType="image/jpeg")
         return {"status": "complete", "result_key": source_key, "result_url": signed_result(storage, source_key), "message": "Surface flattened for review."}
     except Exception as exc:
